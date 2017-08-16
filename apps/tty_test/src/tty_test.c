@@ -45,12 +45,14 @@ int main(void){
 
 
     // 50000 maybe too large to udp lost packet
-    for (int i = 0; i < 10000; i ++)
-    {
-        printf ("helloworld");
-    }
+    // for (int i = 0; i < 10000; i ++)
+    // {
+    //     printf ("helloworld %d\n", i);
+    // }
+    int i = 0;
+
     do {
-        /* printf("task:\tHello world, I'm\ttty_test!\n"); */
+        printf("task:\tHello world, I'm\ttty_test! %d\n", i); 
         fflush(NULL);
         thread_block();
         // sleep(1);	// Implement this as a syscall

@@ -47,7 +47,12 @@
 
 #define TTY_NAME             CONFIG_SOS_STARTUP_APP
 #define TTY_PRIORITY         (0)
-#define TTY_EP_BADGE         (101)
+#define TTY_EP_BADGE         (1<<3)
+
+#define TTY_EP_BADGE2		(1<<4)
+
+
+static int multiple_process = 0;
 
 /* The linker will link this symbol to the start address  *
  * of an archive of attached applications.                */
@@ -301,11 +306,23 @@ void start_first_process(char* app_name, seL4_CPtr fault_ep) {
     conditional_panic(err, "Unable to allocate page for IPC buffer");
 
     /* Copy the fault endpoint to the user app to enable IPC */
-    user_ep_cap = cspace_mint_cap(tty_test_process.croot,
+    if (multiple_process == 0) {
+    	user_ep_cap = cspace_mint_cap(tty_test_process.croot,
                                   cur_cspace,
                                   fault_ep,
                                   seL4_AllRights,
                                   seL4_CapData_Badge_new(TTY_EP_BADGE));
+    	multiple_process++;
+    } else {
+    	user_ep_cap = cspace_mint_cap(tty_test_process.croot,
+                                  cur_cspace,
+                                  fault_ep,
+                                  seL4_AllRights,
+                                  seL4_CapData_Badge_new(TTY_EP_BADGE2));
+    }
+    
+
+
     /* should be the first slot in the space, hack I know */
     assert(user_ep_cap == 1);
     assert(user_ep_cap == USER_EP_CAP);
@@ -466,6 +483,8 @@ int main(void) {
     serial_handler = serial_init();
 
     /* Start the user application */
+    start_first_process(TTY_NAME, _sos_ipc_ep_cap);
+
     start_first_process(TTY_NAME, _sos_ipc_ep_cap);
 
     /* Wait on synchronous endpoint for IPC */
