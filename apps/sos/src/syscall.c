@@ -40,7 +40,7 @@ int sos_syscall_print_to_console(struct proc * proc, seL4_Word reply_cap)
 
     int ret = serial_send(serial_handler, (char *)start_sos_addr, offset);
 
-    COLOR_DEBUG(DB_SYSCALL, ANSI_COLOR_YELLOW, 
+    COLOR_DEBUG(DB_SYSCALL, ANSI_COLOR_YELLOW,
         "[sos] large buffer ipc msg serial_send finish, in syscall.c, len: %d \n",ret);
 
     seL4_MessageInfo_t reply = seL4_MessageInfo_new(0, 0, 0, 1);
@@ -55,6 +55,8 @@ int sos_syscall_write(struct proc * proc, seL4_Word reply_cap)
 	// and read data from shared buffer, then write corresponding
 	// file/device
 	
+
+    return 0;
 }
 
 
