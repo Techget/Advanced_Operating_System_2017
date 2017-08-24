@@ -74,6 +74,17 @@ extern char _cpio_archive[];
 const seL4_BootInfo* _boot_info;
 
 
+extern fhandle_t mnt_point;
+
+#define NOBODY    65534
+#define NOGROUP   65534
+#define ERTOS_SRC  1105
+
+#define ACC_MODE   0100764
+#define USER       NOBODY
+#define GROUP      NOGROUP
+
+
 /*
  * A dummy starting syscall
  */
@@ -319,10 +330,176 @@ static void _sos_init(seL4_CPtr* ipc_ep, seL4_CPtr* async_ep){
     _sos_ipc_init(ipc_ep, async_ep);
 }
 
+struct my_create_arg {
+    int v;
+    fhandle_t *fh;
+    enum nfs_stat stat;
+    fattr_t *fattr;
+};
+
+static void
+my_create_cb(uintptr_t token, enum nfs_stat stat, fhandle_t *fh, fattr_t *fattr){
+    struct my_create_arg *arg = (struct my_create_arg*)token;
+    (void)fh;
+    arg->stat = stat;
+    if(arg->fattr){
+        memcpy(arg->fattr, fattr, sizeof(*fattr));
+    }
+    if(arg->fh){
+        memcpy(arg->fh, fh, sizeof(*fh));
+    }
+    arg->v = 1;
+}
+
+static enum nfs_stat
+my_create(fhandle_t *pfh, char* name, sattr_t* sattr, fattr_t* fattr,
+            fhandle_t *fh){
+    struct my_create_arg arg;
+    arg.v = 0;
+    arg.stat = NFS_OK;
+    arg.fattr = fattr;
+    arg.fh = fh;
+    assert(!nfs_create(pfh, name, sattr, &my_create_cb, (uintptr_t)&arg));
+    // wait(&arg.v);
+    return arg.stat;
+}
+
+
+struct my_write_arg {
+    int v;
+    fhandle_t *fh;
+    char *data;
+    int length;
+    int offset;
+    enum nfs_stat stat;
+    int* err;
+};
+
+static void
+my_write_cb(uintptr_t token, enum nfs_stat status, fattr_t *fattr, int count){
+    struct my_write_arg *arg = (struct my_write_arg*)token;
+    (void)fattr;
+    (void)arg->err;
+    if(status != NFS_OK || arg->length <= count){
+
+        dprintf(0, "~~~~~~ count: %d, arg->length: %d\n", count, arg->length);
+
+        arg->stat = status;
+        arg->v = 1;
+    }else {
+        dprintf(0, "in my_write_cb else block ~~~~~~~~~~\n");
+
+        assert(count != 0);
+        arg->data += count;
+        arg->offset += count;
+        arg->length -= count;
+        assert(!nfs_write(arg->fh, arg->offset, arg->length, arg->data,
+                          &my_write_cb, token));
+    }
+}
+
+static enum nfs_stat
+my_write(fhandle_t *fh, int offset, int length, char* data, int *err){
+    struct my_write_arg arg = {
+            .fh = fh,
+            .data = data,
+            .length = length,
+            .offset = offset,
+            .err = err,
+            .v = 0,
+            .stat = NFS_OK
+        };
+    assert(!nfs_write(fh, offset, length, data, &my_write_cb, (uintptr_t)&arg));
+
+
+    int i = 10000;
+    while (i >0) {i--;}
+    
+    return arg.stat;
+}
+
+
+
+
+struct my_read_arg {
+    int v;
+    fhandle_t *fh;
+    char *data;
+    int length;
+    int offset;
+    enum nfs_stat stat;
+    int* err;
+};
+
+static void
+my_read_cb(uintptr_t token, enum nfs_stat stat, fattr_t * fattr, int read, void* _data){
+    struct my_read_arg *arg = (struct my_read_arg*)token;
+    char *data = (char*)_data;
+    (void)fattr;
+    /* Stat error */
+    if(stat != NFS_OK){
+        arg->stat = stat;
+        arg->v = 1;
+    }else if(read > 0){
+        int i;
+        for(i = 0; i < read; i++){
+            if(arg->data[i] != data[i]){
+                printf("Data mismatch on read\n");
+                *arg->err = *arg->err + 1;
+            }
+        }
+        arg->data += read;
+        arg->offset += read;
+        arg->length -= read;
+        if(arg->length == 0){
+            arg->stat = NFS_OK;
+            arg->v = 1;
+        }else{
+            assert(!nfs_read(arg->fh, arg->offset, arg->length, &my_read_cb, token));
+        }
+    }else{
+        /* didn't read anything??? */
+        arg->stat = -1;
+        arg->v = 1;
+    }
+}
+
+static enum nfs_stat
+my_read(fhandle_t *fh, int offset, int length, void* data, int* err){
+    struct my_read_arg arg = {
+            .fh = fh,
+            .data = data,
+            .length = length,
+            .offset = offset,
+            .stat = NFS_OK,
+            .err = err,
+            .v = 0
+        };
+    assert(!nfs_read(fh, offset, length, &my_read_cb, (uintptr_t)&arg));
+    // wait(&arg.v);
+    return arg.stat;
+}
+
+
+
+
+// static void
+// test_lookup_cb(uintptr_t token, enum nfs_stat stat, fhandle_t *fh, fattr_t * fattr){
+//     token = fh;
+// }
+
+
+// static void
+// test_read_cb(uintptr_t token, enum nfs_stat stat, fattr_t * fattr, int read, void* _data){
+//     dprintf(0, "data read: %s", (char *)_data);
+// }
+
+
 /*
  * Main entry point - called by crt.
  */
 extern void cb_block_read(struct serial *serial, char c);
+
 int main(void) {
 
 #ifdef SEL4_DEBUG_KERNEL
@@ -369,6 +546,39 @@ int main(void) {
     // init_test_coro();
     /* test_process->p_reply_cap = 0; */
     /* sos_syscall_sleep(test_process); */
+
+    // nfs_print_exports();
+
+    char* file_name = "hello.txt";
+
+    fattr_t fattr;
+    sattr_t sattr;
+    fhandle_t fh;
+
+    // /* create some files file */
+    sattr.mode = ACC_MODE;
+    sattr.uid = 32887;
+    sattr.gid = 32887;
+    sattr.size = 12;
+    // sattr.atime.seconds = 12345000;
+    // sattr.atime.useconds = 6665000;
+    // sattr.mtime.seconds = 6780000;
+    // sattr.mtime.seconds = 44430000;
+    assert(my_create(&mnt_point, file_name, &sattr, &fattr, &fh) == NFS_OK);
+
+    int err;
+    char * written_data = "hello world";
+    assert(my_write(&fh, 0, 12, written_data, &err) == NFS_OK);
+
+
+    // nfs_test("useless", &mnt_point);
+
+    // fhandle_t * read_fh;
+    // nfs_lookup(&mnt_point, "test.txt", &test_lookup_cb,read_fh);
+
+
+    // nfs_read(read_fh, 0, 10, &test_read_cb, err);
+
     syscall_loop(_sos_ipc_ep_cap);
 
     /* Not reached */

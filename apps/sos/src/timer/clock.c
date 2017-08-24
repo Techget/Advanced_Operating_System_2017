@@ -2,6 +2,7 @@
 #include "timerlist.h"
 #include "mapping.h"
 #include <clock/clock.h>
+#include <nfs/nfs.h>
 
 #define verbose 5
 #include <sys/debug.h>
@@ -565,4 +566,6 @@ void handle_gpt_irq(void)
     int err = seL4_IRQHandler_Ack(g_gpt.irq);
     /* g_gpt.gpt_map->gptcr |= (1); */
     conditional_panic(err, "Failed to acknowledge gpt interrupt\n");
+
+    nfs_timeout();
 }

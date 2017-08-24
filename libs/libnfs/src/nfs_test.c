@@ -575,7 +575,7 @@ _check_for_files(struct fhandle *mnt, char* fname_data){
         }
     }
     /* clean up */
-    my_readdir_clean(nfiles, remote_fnames);
+    // my_readdir_clean(nfiles, remote_fnames);
     return err;
 }
 
@@ -653,7 +653,7 @@ test_file_names(struct fhandle *mnt)
     /* Perform the tests */
     err += _create_files(mnt, fname_data, &sattr);
     err += _check_for_files(mnt, fname_data);
-    err += _remove_files(mnt, fname_data);
+    // err += _remove_files(mnt, fname_data);
 
     heap_err = heap_test_end();
     printf("%s> errors: %d leaks: %d\n", __func__, err, heap_err);
@@ -681,25 +681,25 @@ test_file_creation(struct fhandle *mnt)
 
     heap_test_start();
     /* Check lookup fails */
-    if((stat = my_lookup(mnt, FILE1, NULL, NULL)) != NFSERR_NOENT){
-        printf("lookup found a file (%s) that should not be there"
-               "Error %d\n", FILE1, stat);
-        assert(0);
-        err++;
-    }
-    if(my_readdir(mnt, &nfiles, NULL) != NFS_OK){
-        printf("readdir failed\n");
-        err++;
-    }
-    if(nfiles != 2){
-        printf("There are files present. Should be empty\n");
-        err++;
-    }
-    /* check remove file */
-    if(my_remove(mnt, FILE1) == NFS_OK){
-        printf("Removed a file that didn't exist\n");
-        err++;
-    }
+    // if((stat = my_lookup(mnt, FILE1, NULL, NULL)) != NFSERR_NOENT){
+    //     printf("lookup found a file (%s) that should not be there"
+    //            "Error %d\n", FILE1, stat);
+    //     assert(0);
+    //     err++;
+    // }
+    // if(my_readdir(mnt, &nfiles, NULL) != NFS_OK){
+    //     printf("readdir failed\n");
+    //     err++;
+    // }
+    // // if(nfiles != 2){
+    // //     printf("There are files present. Should be empty\n");
+    // //     err++;
+    // // }
+    // /* check remove file */
+    // if(my_remove(mnt, FILE1) == NFS_OK){
+    //     printf("Removed a file that didn't exist\n");
+    //     err++;
+    // }
 
 
     /*** create a file ***/
@@ -784,77 +784,77 @@ test_file_creation(struct fhandle *mnt)
 }
 
 
-static int 
-test_empty(struct fhandle *mnt)
-{
-    char** files;
-    int nfiles;
-    int heap_err;
-    int err = 0;
-    PRINT_WELCOME();
-    heap_test_start();
-    assert(!my_readdir(mnt, &nfiles, &files));
-    if(nfiles != 2 /* . and .. */){
-        print_files(nfiles, files);
-        err += nfiles - 2;
-    }
-    my_readdir_clean(nfiles, files);
-    heap_err = heap_test_end();
-    assert(internal_malloc == 0);
-    printf("found %d files. Leaks: %d\n", nfiles, heap_err);
-    err += heap_err;
-    PRINT_RESULT(err);
-    return err;
-}
+// static int 
+// test_empty(struct fhandle *mnt)
+// {
+//     char** files;
+//     int nfiles;
+//     int heap_err;
+//     int err = 0;
+//     PRINT_WELCOME();
+//     heap_test_start();
+//     assert(!my_readdir(mnt, &nfiles, &files));
+//     if(nfiles != 2 /* . and .. */){
+//         print_files(nfiles, files);
+//         err += nfiles - 2;
+//     }
+//     my_readdir_clean(nfiles, files);
+//     heap_err = heap_test_end();
+//     assert(internal_malloc == 0);
+//     printf("found %d files. Leaks: %d\n", nfiles, heap_err);
+//     err += heap_err;
+//     PRINT_RESULT(err);
+//     return err;
+// }
 
-static int
-test_mnt(char* mnt)
-{
-    int i;
-    int export_err = 0;
-    int mount1_err = 0;
-    int mount2_err = 0;
-    int export_heap_err = 0;
-    int mount_heap1_err = 0;
-    int mount_heap2_err = 0;
-    struct fhandle mnt_handle;
-    int err = 0;
-    PRINT_WELCOME();
-    /* run the export test */
-    heap_test_start();
-    for(i = 0; i < REPS; i++){
-        if(nfs_print_exports()){
-            export_err ++;
-        }
-    }
-    export_heap_err = heap_test_end();
+// static int
+// test_mnt(char* mnt)
+// {
+//     int i;
+//     int export_err = 0;
+//     int mount1_err = 0;
+//     int mount2_err = 0;
+//     int export_heap_err = 0;
+//     int mount_heap1_err = 0;
+//     int mount_heap2_err = 0;
+//     struct fhandle mnt_handle;
+//     int err = 0;
+//     PRINT_WELCOME();
+//     /* run the export test */
+//     heap_test_start();
+//     for(i = 0; i < REPS; i++){
+//         if(nfs_print_exports()){
+//             export_err ++;
+//         }
+//     }
+//     export_heap_err = heap_test_end();
  
-    /* run the mount test */
-    heap_test_start();
-    for(i = 0; i < REPS; i++){
-        if(nfs_mount(mnt, &mnt_handle)){
-            mount1_err++;
-        }
-    }
-    mount_heap1_err = heap_test_end();
+//     /* run the mount test */
+//     heap_test_start();
+//     for(i = 0; i < REPS; i++){
+//         if(nfs_mount(mnt, &mnt_handle)){
+//             mount1_err++;
+//         }
+//     }
+//     mount_heap1_err = heap_test_end();
 
-    /* run the mount test on a bad mount*/
-    heap_test_start();
-    for(i = 0; i < REPS; i++){
-        if(!nfs_mount("BOGUS", &mnt_handle)){
-            mount2_err++;
-        }
-    }
-    mount_heap2_err = heap_test_end();
+//     /* run the mount test on a bad mount*/
+//     heap_test_start();
+//     for(i = 0; i < REPS; i++){
+//         if(!nfs_mount("BOGUS", &mnt_handle)){
+//             mount2_err++;
+//         }
+//     }
+//     mount_heap2_err = heap_test_end();
 
-    printf("export errors: %d, heap error: %d\n", export_err, export_heap_err);
-    printf("mount  errors: %d, heap error: %d\n", mount1_err, mount_heap1_err);
-    printf("export errors: %d, heap error: %d\n", mount2_err, mount_heap2_err);
-    err += export_err + mount1_err + mount2_err;
-    err += export_heap_err + mount_heap1_err + mount_heap2_err;
-    PRINT_RESULT(err);
-    return err;
-}
+//     printf("export errors: %d, heap error: %d\n", export_err, export_heap_err);
+//     printf("mount  errors: %d, heap error: %d\n", mount1_err, mount_heap1_err);
+//     printf("export errors: %d, heap error: %d\n", mount2_err, mount_heap2_err);
+//     err += export_err + mount1_err + mount2_err;
+//     err += export_heap_err + mount_heap1_err + mount_heap2_err;
+//     PRINT_RESULT(err);
+//     return err;
+// }
 
 
 static void
@@ -903,27 +903,27 @@ test_retransmit(struct fhandle* pfh)
 }
 
 int 
-nfs_test(char *mnt)
+nfs_test(char *mnt, struct fhandle * mnth)
 {
-    struct fhandle mnt_handle;
+    struct fhandle mnt_handle = *mnth;
     int err = 0;
     printf("*****************\n");
     printf("*** NFS TESTS ***\n");
     printf("*****************\n");
 
     /* Test mountd */
-    RUN(err += test_mnt(mnt));
+    // RUN(err += test_mnt(mnt));
     /* Open the mount point and check that it is clean */
-    if(nfs_mount(mnt, &mnt_handle)){
-        printf("*** Unable to mount %s\n", mnt);
-        assert(0);
-        return -1;
-    }
-    if(test_empty(&mnt_handle)){
-        printf("*** Mount dir not empty!\n");
-        assert(0);
-        return -1;
-    }
+    // if(nfs_mount(mnt, &mnt_handle)){
+    //     printf("*** Unable to mount %s\n", mnt);
+    //     assert(0);
+    //     return -1;
+    // }
+    // if(test_empty(&mnt_handle)){
+    //     printf("*** Mount dir not empty!\n");
+    //     assert(0);
+    //     return -1;
+    // }
     /* Check file creation removal and attributes */
     RUN(err += test_file_creation(&mnt_handle));
     /* Check various file name length and combos */
