@@ -323,8 +323,13 @@ static void _sos_init(seL4_CPtr* ipc_ep, seL4_CPtr* async_ep){
 /*
  * Main entry point - called by crt.
  */
-extern struct serial_console _serial;
-/* static char buf[6000] = {0}; */
+
+static void my_cb (struct serial * serial, char c)
+{
+    printf ("%c", c);
+}
+#include "assert.h"
+
 int main(void) {
 
 #ifdef SEL4_DEBUG_KERNEL
@@ -353,6 +358,7 @@ int main(void) {
     init_console();
     /* init_test_coro(); */
 
+    assert(0 == serial_register_handler(serial_handler, my_cb));
     /* Start the user application */
     COLOR_DEBUG(DB_THREADS, ANSI_COLOR_GREEN, "create sosh process...\n");
     test_process = proc_create(SOSH_NAME, _sos_ipc_ep_cap);
