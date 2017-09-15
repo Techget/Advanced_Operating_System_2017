@@ -370,20 +370,21 @@ void sos_syscall_brk(void* argv)
     ipc_reply(&ctrl, &(proc->p_reply_cap));
 }
 
-void sos_syscall_create_process(void * argv) 
+void sos_syscall_create_process(void * argv)
 {
     struct proc* proc = (struct proc*) argv;
     // assert(proc == get_current_proc());
 
     char* ipc_buf = (get_ipc_buffer(proc));
     struct ipc_buffer_ctrl_msg ctrl;
+    ctrl.offset = 0;
 
     char proc_name[proc->p_ipc_ctrl.offset + 1];
     memcpy(proc_name, ipc_buf, proc->p_ipc_ctrl.offset);
     proc_name[proc->p_ipc_ctrl.offset] = '\0';
 
     struct proc * new_proc = proc_create(proc_name, _sos_ipc_ep_cap);
-    if (new_proc == NULL) 
+    if (new_proc == NULL)
     {
         ctrl.ret_val = ENOMEM;
         ctrl.file_id = -1;
@@ -391,9 +392,10 @@ void sos_syscall_create_process(void * argv)
         return;
     }
 
+
+
     proc_activate(new_proc);
 
-    ctrl.offset = 0;
     ctrl.ret_val = 0;
     ctrl.file_id = new_proc->p_pid;
     COLOR_DEBUG(DB_SYSCALL, ANSI_COLOR_GREEN, "end sos_syscall_create_process proc: %u\n",proc->p_pid);
@@ -401,30 +403,96 @@ void sos_syscall_create_process(void * argv)
     ipc_reply(&ctrl, &(proc->p_reply_cap));
 }
 
+
+void sos_syscall_wait_process(void * argv)
+{
+    struct proc* proc = (struct proc*) argv;
+    assert(proc == get_current_proc());
+
+    struct ipc_buffer_ctrl_msg ctrl;
+    ctrl.offset = 0;
+    pid_t pid = proc->p_ipc_ctrl.file_id;
+    COLOR_DEBUG(DB_SYSCALL, ANSI_COLOR_GREEN, " proc: %u wait for %u\n",proc->p_pid, pid);
+    struct proc* wait_proc = proc_get_child(pid);
+    if (wait_proc == NULL)
+    {
+        ERROR_DEBUG("not find the child proc\n");
+        ctrl.ret_val = ECHILD;
+        goto wait_end;
+    }
+    assert(!list_empty(&proc->as_child_next)); // FIXME has this child.
+    if (wait_proc->p_status == PROC_STATUS_ZOMBIE)
+    {
+        ERROR_DEBUG("zombie proc exit\n");
+        ctrl.ret_val = 0;
+        proc_destroy(wait_proc);
+        goto wait_end;
+    }
+    else
+    {
+        proc->p_waitchild = sem_create("waiting child", 0, -1);
+        if (proc->p_waitchild == NULL)
+        {
+            ERROR_DEBUG("no enough mem creating sem\n");
+            ctrl.ret_val = ENOMEM;
+            goto wait_end;
+        }
+        wait_proc->someone_wait = true;
+        COLOR_DEBUG(DB_SYSCALL, ANSI_COLOR_GREEN, " proc: %u now  blocks waiting for %u\n",proc->p_pid, pid);
+
+        P(proc->p_waitchild);
+        wait_proc->someone_wait = false;
+        sem_destroy(proc->p_waitchild);
+        proc_deattch(wait_proc);
+        proc_destroy(wait_proc);
+    }
+wait_end:
+    COLOR_DEBUG(DB_SYSCALL, ANSI_COLOR_GREEN, " proc: %u wait for %u finish: %d\n",proc->p_pid, pid, ctrl.ret_val);
+    ipc_reply(&ctrl, &(proc->p_reply_cap));
+    return;
+}
+
 void sos_syscall_delete_process(void * argv)
 {
     struct proc* proc = (struct proc*) argv;
 
     struct ipc_buffer_ctrl_msg ctrl;
-
-    int pid = proc->p_ipc_ctrl.file_id;
-    assert(pid>0);
-
-    struct proc * proc_to_be_deleted = get_proc_by_pid(pid);
-    proc_to_be_deleted->p_status = PROC_STATUS_ZOMBIE;
-    // seL4 stop runing this process, and will clean up the 
-    // data structrue in `recycle_process` in syscall loop in main.c
-    seL4_TCB_Suspend(proc_to_be_deleted->p_tcb->cap);
-
     ctrl.offset = 0;
     ctrl.ret_val = 0;
     ctrl.file_id = 0;
+    int pid = proc->p_ipc_ctrl.file_id;
+    struct proc * proc_to_be_deleted = get_proc_by_pid(pid);
+    if (!proc_to_be_deleted || pid == 0) // you can not kill kproc!
+    {
+        ctrl.ret_val = ESRCH;
+        ipc_reply(&ctrl, &(proc->p_reply_cap));
+        return;
+    }
+
+    // like linux D status, you can't kill it while blocked on nfs or something else
+    if (coro_status(proc_to_be_deleted->p_coro) == COROUTINE_SUSPEND)
+    {
+        ctrl.ret_val = EPERM;
+        ipc_reply(&ctrl, &(proc->p_reply_cap));
+        return;
+    }
+    proc_exit(proc_to_be_deleted);
+    bool wakeup = proc_wakeup_father(proc_to_be_deleted);
+    if (!wakeup)
+    {
+        proc_attach_kproc(proc);
+    }
+
+    /* if (proc != get_current_proc()) */
+    /*     coro_stop(proc->p_coro);  //make sure app coro not schedule again */
+
     COLOR_DEBUG(DB_SYSCALL, ANSI_COLOR_GREEN, "end sos_syscall_delete_process proc\n");
 
-    ipc_reply(&ctrl, &(proc->p_reply_cap));
+    // TODO we need write something on nc
+    if (proc_to_be_deleted != get_current_proc())
+        ipc_reply(&ctrl, &(proc->p_reply_cap));
 }
 
-void sos_syscall_wait_process(void * argv){} 
 
 void sos_syscall_process_status(void * argv)
 {
@@ -439,9 +507,9 @@ void sos_syscall_process_status(void * argv)
     // loop through proc_array and try to find proper process pointer
     int i = 0; // If don't want to display the SOS and SOSH, start from 2
     int j = 0;
-    while (i < PROC_ARRAY_SIZE && j < ps_amount) 
+    while (i < PROC_ARRAY_SIZE && j < ps_amount)
     {
-        if (proc_array[i] == NULL || proc_array[i]->p_status == PROC_STATUS_ZOMBIE) 
+        if (proc_array[i] == NULL || proc_array[i]->p_status == PROC_STATUS_ZOMBIE)
         {
             i++;
             continue;
@@ -473,12 +541,15 @@ void sos_syscall_process_status(void * argv)
 void sos_syscall_exit_process(void* argv)
 {
     struct proc* proc = (struct proc*) argv;
-
-    // do not need to reply anything, this is all we need to do 
-    proc->p_status = PROC_STATUS_ZOMBIE;
-    seL4_TCB_Suspend(proc->p_tcb->cap);
+    assert(get_current_proc() == proc);
+    proc_exit(proc);
+    bool wakeup = proc_wakeup_father(proc);
+    // let kproc to recycle this proc, which is not same semetic as linux
+    if (!wakeup)
+    {
+        proc_attach_kproc(proc);
+    }
 }
-
 
 void handle_syscall(seL4_Word badge, struct proc * app_process)
 {
@@ -494,13 +565,16 @@ void handle_syscall(seL4_Word badge, struct proc * app_process)
 
     assert(coro_status(app_process->p_coro) == COROUTINE_INIT);
     /* Save the caller */
-    reply_cap = cspace_save_reply_cap(cur_cspace);
-    assert(reply_cap != CSPACE_NULL);
-
-    // in case the app process block, the reply_cap and message get flushed
-    // we put these into `proc struct`
     assert(app_process->p_reply_cap == 0);
-    app_process->p_reply_cap = reply_cap;
+    if (syscall_number != SOS_SYSCALL_PROCESS_EXIT)
+    {
+        reply_cap = cspace_save_reply_cap(cur_cspace);
+        assert(reply_cap != CSPACE_NULL);
+
+        // in case the app process block, the reply_cap and message get flushed
+        // we put these into `proc struct`
+        app_process->p_reply_cap = reply_cap;
+    }
 
     if (syscall_number < 0 || syscall_number > NUMBER_OF_SYSCALL) {
         printf("%s:%d (%s) Unknown syscall %d\n",

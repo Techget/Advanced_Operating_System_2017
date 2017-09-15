@@ -160,11 +160,13 @@ static int ps(int argc, char **argv) {
     return 0;
 }
 
+//TODO support argc,argv running command
 static int exec(int argc, char **argv) {
     pid_t pid;
     int r;
     int bg = 0;
 
+    tty_debug_print("argc num: %d\n", argc);
     if (argc < 2 || (argc > 2 && argv[2][0] != '&')) {
         printf("Usage: exec filename [&]\n");
         return 1;
@@ -190,6 +192,7 @@ static int exec(int argc, char **argv) {
         printf("Failed!\n");
     }
     if (bg == 0) {
+        tty_debug_print("continue sosh\n");
         in = open("console", O_RDONLY);
         assert(in >= 0);
     }
