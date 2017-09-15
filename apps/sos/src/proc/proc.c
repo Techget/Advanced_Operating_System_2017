@@ -153,6 +153,8 @@ struct proc* proc_create(char* name, seL4_CPtr fault_ep_cap)
         return NULL;
     }
 
+    // should not assign name to p_name, because name will be deleted 
+    // in the near future. Thne p_name point to random stuff.
     process->p_name = strdup(name);
     process->p_pid = proc_id;
     process->p_badge = proc_id % PROC_ARRAY_SIZE;
