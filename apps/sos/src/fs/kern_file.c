@@ -87,6 +87,7 @@ int close_kern_file(struct file* fs)
 
         if (v_tmp != NULL)
         {
+            printf ("vfs close: %p\n", v_tmp);
             vfs_close(v_tmp);
         }
 
@@ -120,11 +121,12 @@ static int __do_stdio_open(struct file** f, int fd)
     char con[10] = "console:";
     struct file* tmp;
     *f = NULL;
+    assert(fd != 0);
     int flags = (fd == 0? O_RDONLY: O_WRONLY);
     struct vnode* v;
 
     int ret = 0;
-    ret = vfs_open(con, flags, 0, &v);
+    ret = vfs_open(con, flags, flags, &v);
     if (ret != 0)
     {
         ERROR_DEBUG("vfs_open: std[%d] failed\n", fd);
@@ -141,7 +143,6 @@ static int __do_stdio_open(struct file** f, int fd)
     }
 
     list_add_tail(&(tmp->link_obj),&(g_ftb.list_obj.head));
-
     *f = tmp;
     return 0;
 }
@@ -321,18 +322,6 @@ int kern_file_write(struct file* f, const void * buf, size_t buf_size, size_t *w
     int ret = 0;
     struct iovec iov;
     struct uio u;
-    // XXX not support O_APPEND at this stage.
-
-    /* if (f->f_flags & O_APPEND) */
-    /* { */
-    /*     ret = get_file_stat(f); */
-    /*     if ( ret != 0) */
-    /*     { */
-    /*  */
-    /*         return ret; */
-    /*     } */
-    /*  */
-    /* } */
     size_t old = f->f_pos;
     uio_kinit(&iov, &u,(void *) buf, buf_size, f->f_pos, UIO_WRITE);
     ret = VOP_WRITE(f->v_ptr, &u);

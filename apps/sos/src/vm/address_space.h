@@ -1,12 +1,12 @@
 #ifndef _ADDRESS_SPACE_H_
 #define _ADDRESS_SPACE_H_
+#include "vfs/vnode.h"
 #include "elf/elf.h"
 #include "comm/comm.h"
 #include "comm/list.h"
 #include "vmem_layout.h"
 #include "vm.h"
-#include "proc/proc.h"
-
+#include "pagetable.h"
 
 /*
  * Address space - data structure associated with the virtual memory
@@ -28,6 +28,7 @@ enum fault_type
     FAULT_READ = 1,
     FAULT_WRITE = 2,
     FAULT_WRITE_ON_READONLY = 4,
+    FAULT_FATAL = 8,
 };
 
 static inline int sel4_fault_code_to_fault_type(int code)
@@ -73,7 +74,11 @@ static inline int sel4_fault_code_to_fault_type(int code)
     {
         return FAULT_READ;
     }
-    ERROR_DEBUG("need handle fault: %d\n", code);
+    else
+    {
+        ERROR_DEBUG("fatal error, unknown handle fault: %d\n", code);
+        return FAULT_FATAL;
+    }
     assert(0);
     return -1;
 
@@ -92,9 +97,8 @@ struct as_region_metadata
 
     enum region_type type;
     // Advanced part for demand loading
-    // struct vnode *region_vnode;
+    struct vnode *region_vnode;
 
-    char* p_elfbase; // for further fault handler load code/data section into page/frame table
     vaddr_t elf_vaddr; // the vaddr specified by the elf file, which is the starting vaddr to load the elf binary
     size_t elf_offset; // the start loading elf file offset, corresponding to  elf_vaddr
     size_t elf_size; // actual loaded content from file
@@ -109,20 +113,20 @@ struct addrspace
     // struct as_region_metadata *list;
     struct list *list;
     // char is_loading;
-    char* elf_base; // will be set in elf_load(), corresponding value is the elf_base passed into
+    uint32_t entry_point; // will be set in elf_load(), corresponding value is the elf_base passed into
                     // the elf_load() function, and for now it is at least useful for proc_activate()
-    struct proc* proc;
+    struct pagetable* pt;
 };
 
 
 
-struct addrspace *as_create(void);
+struct addrspace *as_create(struct pagetable* pt);
 // int               as_copy(struct addrspace *src, struct addrspace **ret);// XXX need in fork
 void              as_destroy(struct addrspace *);
 
 int               as_define_region(struct addrspace *as,
                                    vaddr_t vaddr,
-                                   char* elf_base,
+                                   struct vnode* elf_base,
                                    size_t elf_region_offset,
                                    size_t memsz,
                                    size_t filesz,
@@ -133,8 +137,8 @@ int               as_define_region(struct addrspace *as,
 
 int               as_define_stack(struct addrspace* as, vaddr_t* stack_pointer);
 int               as_define_heap (struct addrspace* as);
-int               as_define_ipc  (struct proc* proc, struct addrspace* as);
-int               as_define_ipc_shared_buffer(struct proc*, struct addrspace * as);
+int               as_define_ipc  (struct addrspace* as);
+int               as_define_ipc_shared_buffer(struct addrspace * as);
 int               as_define_mmap (struct addrspace* as); // TODO
 
 struct as_region_metadata* as_get_region(struct addrspace* as, vaddr_t vaddr);
@@ -152,7 +156,7 @@ void as_destroy_region(struct addrspace *as, struct as_region_metadata *to_del);
 
 
 // it is called in proc_create() to initialize the program
-int vm_elf_load(struct addrspace* as, seL4_ARM_PageDirectory dest_vspace, char* elf_file);
+int vm_elf_load(struct addrspace* as, seL4_ARM_PageDirectory dest_vspace, char* elf_file, struct vnode* );
 
 // used in TCB configure proc.c
 seL4_CPtr as_get_ipc_cap(struct addrspace * as);
@@ -167,7 +171,6 @@ int as_handle_elfload_fault(struct pagetable* pt, struct as_region_metadata* as,
 
 void loop_through_region(struct addrspace *as);
 
-void* get_ipc_buffer(struct proc* proc);
 
 int as_get_heap_brk(struct addrspace* as, uint32_t brk_in, uint32_t* brk_out);
 
