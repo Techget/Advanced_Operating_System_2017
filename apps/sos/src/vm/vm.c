@@ -113,7 +113,11 @@ static void vm_fault(void* argv)
         else // code, date
         {
             assert (region->type == CODE || region->type == DATA);
-            ret = as_handle_elfload_fault(cur_proc->p_resource.p_pagetable, region, vaddr, sel4_fault_code_to_fault_type(cur_proc->p_context.vm_fault_code));
+            if (cur_proc->p_pid >= 2) {
+                ret = as_handle_elfload_fault_from_nfs(cur_proc, region, vaddr, sel4_fault_code_to_fault_type(cur_proc->p_context.vm_fault_code));
+            } else {
+                ret = as_handle_elfload_fault(cur_proc->p_resource.p_pagetable, region, vaddr, sel4_fault_code_to_fault_type(cur_proc->p_context.vm_fault_code));
+            }
         }
     }
 

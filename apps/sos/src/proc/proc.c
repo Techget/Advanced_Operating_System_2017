@@ -402,6 +402,34 @@ bool proc_load_elf(struct proc * process, char* file_name)
     return true;
 }
 
+bool proc_load_elf_from_nfs(struct proc * process, char* file_name)
+{
+    assert(get_proc_status(process) == PROC_STATUS_INIT);
+    unsigned long elf_size;
+    // char * elf_base = cpio_get_file(_cpio_archive, file_name, &elf_size);
+    
+    char filename[4096];
+    memcpy(filename, "nfs:", 4);
+    memcpy(filename + 4, file_name, strlen(file_name));
+    filename[4 + strlen(file_name)] = 0;
+
+    // open the corresponding elf file on nfs
+    syscall_open(filename, O_RDWR, O_RDWR, &(process->p_resource.p_addrspace->elf_file_fd));
+
+    size_t ret_val = 0;
+    syscall_read(process->p_resource.p_addrspace->elf_file_fd, &(process->p_resource.p_addrspace->elf_header), 4096, &ret_val);
+
+    /*** load the elf image info, set up addrspace ***/
+    // DATA and CODE region is set up by `vm_elf_load`
+    //  in parent coroutine!
+    int err = vm_elf_load_from_nfs(process->p_resource.p_addrspace, process->p_resource.p_pagetable->vroot.cap);
+    if (err != 0)
+    {
+        return false;
+    }
+    return true;
+}
+
 
 static int _init_proc_argv_on_stack(struct proc* proc, int argc, char** argv, uint32_t* argv_addr, uint32_t* stack_top)
 {

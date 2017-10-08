@@ -117,6 +117,11 @@ struct addrspace
     char* elf_base; // will be set in elf_load(), corresponding value is the elf_base passed into
                     // the elf_load() function, and for now it is at least useful for proc_activate()
     struct pagetable* pt;
+
+    int elf_file_fd;
+
+    // In spec mentioned that . You can assume the header is less than the page size (4 KiB).
+    char elf_header[4096];
 };
 
 
@@ -169,6 +174,7 @@ seL4_CPtr as_get_ipc_cap(struct addrspace * as);
 int as_handle_page_fault(struct pagetable* pt, struct as_region_metadata * region, vaddr_t fault_addr, int fault_type);
 
 int as_handle_elfload_fault(struct pagetable* pt, struct as_region_metadata* as, vaddr_t fault_addr, int fault_type);
+int as_handle_elfload_fault_from_nfs(struct pagetable* pt, struct as_region_metadata* as, vaddr_t fault_addr, int fault_type);
 
 void loop_through_region(struct addrspace *as);
 

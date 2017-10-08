@@ -92,7 +92,6 @@ seL4_CPtr _sos_interrupt_ep_cap;
  * NFS mount point
  */
 extern fhandle_t mnt_point;
-
 // static struct serial * serial_handler = NULL;
 
 

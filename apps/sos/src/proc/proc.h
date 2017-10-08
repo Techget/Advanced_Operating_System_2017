@@ -14,7 +14,6 @@
 #define INVALID_WAIT_PID (-10000)
 #define WAIT_ALL_PID (-1)
 
-
 enum PROC_STATUS
 {
     PROC_STATUS_INIT = 0,
@@ -95,6 +94,7 @@ char proc_status_display(struct proc* proc);
 int proc_start(struct proc* proc, int argc, char** argv);
 
 bool proc_load_elf(struct proc * process, char* file_name);
+bool proc_load_elf_from_nfs(struct proc * process, char* file_name)
 
 void proc_exit(struct proc* proc);
 

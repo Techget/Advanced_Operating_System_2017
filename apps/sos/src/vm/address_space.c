@@ -416,6 +416,74 @@ int vm_elf_load(struct addrspace* dest_as, seL4_ARM_PageDirectory dest_vspace, c
     return 0;
 }
 
+
+int vm_elf_load_from_nfs(struct addrspace* dest_as, seL4_ARM_PageDirectory dest_vspace)
+{
+    /* Ensure that the ELF file looks sane. */
+    // if (elf_checkFile(elf_file))
+    // {
+    //     return EINVAL;
+    // }
+    dest_as->elf_base = 0;
+
+    int num_headers = elf_getNumProgramHeaders(dest_as->elf_Header);
+    int i;
+    for (i = 0; i < num_headers; i++)
+    {
+
+        /* Skip non-loadable segments (such as debugging data). */
+        if (elf_getProgramHeaderType(dest_as->elf_Header, i) != PT_LOAD)
+            continue;
+
+        /* Fetch information about this segment. */
+        uint32_t off = elf_getProgramHeaderOffset(dest_as->elf_Header, i);
+        /* source_addr = elf_file + elf_getProgramHeaderOffset(elf_file, i); */
+        uint32_t file_size = elf_getProgramHeaderFileSize(dest_as->elf_Header, i);
+        uint32_t segment_size = elf_getProgramHeaderMemorySize(dest_as->elf_Header, i);
+        uint32_t vaddr = elf_getProgramHeaderVaddr(dest_as->elf_Header, i);
+        uint32_t flags = elf_getProgramHeaderFlags(dest_as->elf_Header, i);
+        char * name = elf_getSectionName(dest_as->elf_Header, i);
+
+
+        // fill in corresponding region infos
+        if (strcmp(name, ".text") == 0)
+        {
+            COLOR_DEBUG(DB_VM, ANSI_COLOR_GREEN, " Try to create and define CODE region offset from elf at %u\n", off);
+            int err = as_define_region(dest_as,
+                    vaddr,
+                    elf_file,
+                    off,
+                    segment_size,
+                    file_size,
+                    flags & PF_R, flags & PF_W, flags &PF_X,
+                    CODE);
+            conditional_panic(err != 0, "Fail to create and define CODE Region\n");
+        }
+        else if (strcmp(name, ".rodata") == 0)
+        {
+
+            COLOR_DEBUG(DB_VM, ANSI_COLOR_GREEN, " Try to create and define DATA region offset from elf at %u\n", off);
+            int err = as_define_region(dest_as,
+                    vaddr,
+                    elf_file,
+                    off,
+                    segment_size,
+                    file_size,
+                    flags & PF_R, flags & PF_W, flags & PF_X,
+                    DATA);
+            conditional_panic(err != 0, "Fail to create and define DATA Region\n");
+        }
+        else
+        {
+            ERROR_DEBUG( "the section %s need load, but not handled\n", name);
+        }
+
+        dprintf(0, " * Loading segment %08x-->%08x\n", (int)vaddr, (int)(vaddr + segment_size));
+    }
+
+    return 0;
+}
+
 static void dump_region(struct as_region_metadata* region)
 {
     COLOR_DEBUG(DB_VM, ANSI_COLOR_GREEN, "region type: %s\n", REGION_NAME[(region->type)]);
@@ -518,6 +586,112 @@ int as_handle_elfload_fault(struct pagetable* pt, struct as_region_metadata* r, 
     flush_sos_frame(paddr);
     return 0;
 }
+
+// load elf from nfs elf file
+int as_handle_elfload_fault_from_nfs(struct proc* proc, struct as_region_metadata* r, vaddr_t fault_addr, int fault_type)
+{
+    struct pagetable * pt = proc->p_resource.p_pagetable;
+
+    assert(pt != NULL && r != NULL &&r->p_elfbase != NULL);
+    assert(!(fault_addr &(~seL4_PAGE_MASK)));
+    assert(r->npages * seL4_PAGE_SIZE >= r->elf_size);
+    const struct as_region_metadata region = *r;
+
+    uint32_t file_copy_addr = 0;
+    uint32_t file_copy_bytes = 0;
+    uint32_t vm_copied_addr_offset = 0;
+    uint32_t zero_gap = region.elf_vaddr - region.region_vaddr;
+    /* dump_region(r); */
+
+    if (fault_addr + seL4_PAGE_SIZE <= region.elf_vaddr)
+    {
+        /* COLOR_DEBUG(DB_VM, ANSI_COLOR_GREEN, "case 1\n"); */
+        // nothing
+    }
+    else if (fault_addr >= region.elf_vaddr + region.elf_size)
+    {
+        /* COLOR_DEBUG(DB_VM, ANSI_COLOR_GREEN, "case 2\n"); */
+        // nothing
+    }
+    else if (fault_addr <= region.elf_vaddr &&
+        fault_addr + seL4_PAGE_SIZE >= region.elf_vaddr &&
+        fault_addr + seL4_PAGE_SIZE <= region.elf_vaddr + region.elf_size)
+    {
+        file_copy_addr = region.elf_offset;
+        vm_copied_addr_offset =  region.elf_vaddr - fault_addr;
+        file_copy_bytes = seL4_PAGE_SIZE  - vm_copied_addr_offset;
+        /* COLOR_DEBUG(DB_VM, ANSI_COLOR_GREEN, "case 3 %u\n", file_copy_bytes); */
+    }
+    else if (fault_addr >= region.elf_vaddr &&
+        fault_addr + seL4_PAGE_SIZE <= region.elf_vaddr + region.elf_size)
+    {
+        /* COLOR_DEBUG(DB_VM, ANSI_COLOR_GREEN, "case 4\n"); */
+        file_copy_bytes = seL4_PAGE_SIZE;
+        vm_copied_addr_offset = 0;
+        file_copy_addr = region.elf_offset + (fault_addr - region.region_vaddr -zero_gap);
+
+    }
+    else if (fault_addr <= region.elf_vaddr &&
+        fault_addr + seL4_PAGE_SIZE >= region.elf_vaddr + region.elf_size)
+    {
+        file_copy_bytes = region.elf_size;
+        file_copy_addr = region.elf_offset;
+        vm_copied_addr_offset = region.elf_vaddr - fault_addr;
+    }
+    else if (fault_addr >= region.elf_vaddr &&
+        fault_addr <= region.elf_vaddr + region.elf_size &&
+        fault_addr +seL4_PAGE_SIZE >= region.elf_vaddr + region.elf_size )
+    {
+        vm_copied_addr_offset = 0;
+        file_copy_bytes = (region.elf_vaddr + region.elf_size) - fault_addr;
+        file_copy_addr = region.elf_offset + (fault_addr - region.region_vaddr -zero_gap);
+    }
+    else
+    {
+        // something we forget to handle.
+        assert(0);
+    }
+
+    int ret = as_handle_page_fault(pt, r, fault_addr, fault_type);
+    if (ret != 0)
+    {
+        return ret;
+    }
+
+    paddr_t paddr = page_phys_addr(pt, fault_addr);
+    if (!is_page_loaded(pt, fault_addr))
+    {
+        assert(paddr != 0);
+        // calculate the copy region
+
+        /* COLOR_DEBUG(DB_VM, ANSI_COLOR_GREEN, "vm off: %u, file addr: %u, bytes: %d\n", vm_copied_addr_offset, file_copy_addr,file_copy_bytes ); */
+
+        // read from file, from curproc get address-space then get the corresponding vnode
+
+        // file_copy_addr += (uint32_t) r->p_elfbase;
+        // COLOR_DEBUG(DB_VM, ANSI_COLOR_GREEN, "alloc vaddr: 0x%x at paddr: 0x%x\n", fault_addr, paddr);
+        // COLOR_DEBUG(DB_VM, ANSI_COLOR_GREEN, "* copy file at 0x%x to physical mem 0x%x with %d bytes\n", file_copy_addr, paddr + vm_copied_addr_offset, file_copy_bytes);
+        if (file_copy_bytes)
+        {
+            char tmp[file_copy_bytes];
+
+            size_t ret_val = 0;
+
+            syscall_lseek();
+
+            syscall_read(process->p_resource.p_addrspace->elf_file_fd, tmp, file_copy_bytes, &ret_val);
+
+
+            memcpy((void*)(paddr + vm_copied_addr_offset), (void*)file_copy_addr, file_copy_bytes);
+        }
+        set_page_already_load(pt, fault_addr);
+    }
+    flush_sos_frame(paddr);
+    return 0;
+}
+
+
+
 
 int as_handle_page_fault(struct pagetable* pt, struct as_region_metadata * region, vaddr_t fault_addr, int fault_type)
 {
